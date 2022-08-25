@@ -11,16 +11,16 @@
 
 
 import os
+import glob
 import numpy as np
 from astropy.io import fits
-from astropy.table import Table
+from astropy.table import Table, vstack
 
 from astropy.io.fits.connect import read_table_fits
 from astropy.io.votable.table import from_table
 
 def create_directory(path):
     '''Makes a folder (and its parents) if not present'''
-
     try:
         os.makedirs(path)
     except:
@@ -108,13 +108,92 @@ def split_bytes_dtype_list(dtype_info_list):
             
     return dtype_info_list_out
 
+def table_is_compatible(ref_table, table, verbose=True):
+    '''Function to check if one table is similar to a reference table (column names and dtype)
+
+    Parameters
+    ----------
+    ref_table : `~astropy.table.Table`
+        Reference table
+    table : `~astropy.table.Table`
+        generic table
+    verbose : bool, optional
+        print messages, by default True
+
+    Returns
+    -------
+    bool
+        True if the table is similar to a reference table
+    '''
+
+    flag = True
+    if all(key in table.colnames for key in ref_table.keys()):
+        if verbose:
+            print('OK, Minimum required table keys are present')
+    else:
+        if verbose:
+            print('Not all minimum table keys are present')
+        for key in ref_table.keys():
+            if key in table.colnames:
+                if not np.issubsctype(table[key].dtype, key):
+                    flag = False
+                    if verbose:
+                        print('Dtype of column {} does not match. ')
+                        print('Got {}'.format(key, table[key].dtype))
+            else:
+                flag = False
+                if verbose:
+                    print('Name of column {} does not match.'.format(key))
+    return flag
+
+def append_tables(fits_table_list):
+    '''Function to aggregate the tables in a list of .fits filenames taking the first 
+    one as a reference
+
+    Parameters
+    ----------
+    fits_table_list : list or str
+        list of filenames (dirname and filename) of FITS files
+
+    Returns
+    -------
+    `~astropy.table.Table`
+        aggregated table of FITS files
+
+    Raises
+    ------
+    ValueError
+        Warning if there is only one FITS file in the list
+    ValueError
+        If any of the input table is not compatible with the first (reference table)
+    '''
+    if isinstance(fits_table_list, str):
+        fits_table_list = list(fits_table_list)
+
+    ref_table = Table.read(fits_table_list[0], character_as_bytes=False)
+    
+    try:
+        for fits_table_file in fits_table_list[1:]:
+            add_table = Table.read(fits_table_file, character_as_bytes=False)
+            if table_is_compatible(ref_table, add_table):
+                ref_table = vstack([ref_table, add_table])
+            else:
+                print('{} is not compatible with the reference table.'.format(add_table))
+                raise ValueError
+    except:
+        print('There is only one element to the list')
+        raise ValueError
+
+    return ref_table
+
 if __name__ == '__main__':
    
     test = False
     if test:
         path = fits.util.get_testdata_filepath('tb.fits')
     else:
-        path = '/Users/epuga/ESDC/FP7H2020/inputs/help/data/ELAIS-N1_20171016.fits' #Catalogue as FITS Table BinTable
+        #path = '/Users/epuga/ESDC/FP7H2020/inputs/help/data/ELAIS-N1_20171016.fits' #Catalogue as FITS Table BinTable
+        path = '/Volumes/EP_DISK2/EUProjects/HELP/spire_blind/dmu22_XID+SPIRE_COSMOS_BLIND_Matched_MF.fits'
         out_dirname = '/Users/epuga/ESDC/FP7H2020/votables/help'
         create_directory(out_dirname)
             
@@ -139,10 +218,18 @@ if __name__ == '__main__':
                      descriptions=tinfo['description'].tolist(), units=tinfo['unit'].tolist())
     
 
+
+    fits_list = glob.glob(os.path.join('/Volumes/EP_DISK2/EUProjects/HELP/spire_blind', "*.fits"))
+    _all_fields = ['AKARI-NEP','AKARI-SEP','Bootes','CDFS-SWIRE','COSMOS','EGS','ELAIS-N1','ELAIS-N2','ELAIS-S1','GAMA-09','GAMA-12','GAMA-15','HDF-N','Herschel-Stripe-82','Lockman-SWIRE','NGP','SA13','SGP','SPIRE-NEP','SSDF','xFLS','XMM-13hr','XMM-LSS'] 
+    fits_list_clean = [x for x in fits_list if "HELP_BLIND" not in x]
+    fits_list_sort = sorted(fits_list_clean, key=lambda x: [i for i,e in enumerate(_all_fields) if e in x][0])
+    mr_table = append_tables(fits_list_sort)
+        
     #Convert to votable
     votable = table_to_votable(mr_table)
     #votable to .xml file
-    votable.to_xml(os.path.join(out_dirname, basename + '.xml'))
+    #votable.to_xml(os.path.join(out_dirname, basename + '.xml'))
+    votable.to_xml(os.path.join(out_dirname, 'dmu22_XID+SPIRE_HELP_BLIND_Matched_MF.xml'))
     
 
     #Only 1 table to xml
@@ -150,6 +237,7 @@ if __name__ == '__main__':
     votable = from_table(table)
     votable.to_xml(os.path.join(out_dirname, basename + '_direct.xml'))
     #TODO: serialize fit tables
+
 
     #fits read to write for xml (no intermediate steps)
     tbl = Table.read(path)
