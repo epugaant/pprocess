@@ -13,11 +13,12 @@
 import os
 import glob
 import numpy as np
-from astropy.io import fits
+from astropy.io import fits, ascii
 from astropy.table import Table, vstack
 
 from astropy.io.fits.connect import read_table_fits
 from astropy.io.votable.table import from_table
+from astropy import units as u
 
 def create_directory(path):
     '''Makes a folder (and its parents) if not present'''
@@ -60,7 +61,8 @@ def table_to_votable(mr_tbl):
     '''
     
     #TODO: serialize tables in resource construction
-    from astropy.io.votable.tree import VOTableFile, Resource, Table
+    #from astropy.io.votable.tree import VOTableFile, Resource, Table
+    from tree import VOTableFile, Resource, Table
 
     votable = VOTableFile()
     # ...with one resource...
@@ -171,6 +173,7 @@ def append_tables(fits_table_list):
         fits_table_list = list(fits_table_list)
 
     ref_table = Table.read(fits_table_list[0], character_as_bytes=False)
+    tinfo = make_cols_info_table(ref_table)
     
     try:
         for fits_table_file in fits_table_list[1:]:
@@ -183,8 +186,26 @@ def append_tables(fits_table_list):
     except:
         print('There is only one element to the list')
         raise ValueError
+    
 
     return ref_table
+
+def metadata_rich_table(table, descriptions, names=None, dtype=None, units=None, meta=None):
+    #TODO: Table may be empty
+    if names is None:
+        names = table.colnames
+        
+    if dtype is None:
+        dtype = table.dtype
+    
+    if units is None:
+        units = make_cols_info_table(table)['unit'].tolist()
+    
+    if meta is None:
+        meta = table.meta
+    
+    new_table = Table(rows=table.as_array(), names=names, dtype=dtype, meta=meta, descriptions=descriptions, units=units)
+    return new_table
 
 if __name__ == '__main__':
    
@@ -205,43 +226,61 @@ if __name__ == '__main__':
     
     print('Input .FITS: {}'.format(os.path.join(in_dirname, filename)))
     print('Output VOTABLE: {}'.format(os.path.join(out_dirname, basename+'.xml')))
+    
+    #-------------
 
+    #Test 1: Metadata-rich fits table to votable
     #Deconstruct into numpy_array and a separate table with columns for testing purposes
-    table = read_table_fits(path, memmap=True, astropy_native=True)
+    table = read_table_fits(path, memmap=True, astropy_native=True)# more tunnable way to read in table 
     tinfo = make_cols_info_table(table)
     bare_data = table.as_array() # produces a structured array (records array)
     
-    #Construct metadata-rich table
+    #Construct one metadata-rich table
     print(split_bytes_dtype_list(tinfo['dtype'].tolist()))
     mr_table = Table(rows=table.as_array(), names=tinfo['name'].tolist(), 
                      dtype=split_bytes_dtype_list(tinfo['dtype'].tolist()), meta=table.meta, 
                      descriptions=tinfo['description'].tolist(), units=tinfo['unit'].tolist())
     
 
-
+    #Test 2: serialized fits tables + external descriptions to votable
     fits_list = glob.glob(os.path.join('/Volumes/EP_DISK2/EUProjects/HELP/spire_blind', "*.fits"))
+    out_dirname = '/Users/epuga/ESDC/FP7H2020/votables/help'
+    
     _all_fields = ['AKARI-NEP','AKARI-SEP','Bootes','CDFS-SWIRE','COSMOS','EGS','ELAIS-N1','ELAIS-N2','ELAIS-S1','GAMA-09','GAMA-12','GAMA-15','HDF-N','Herschel-Stripe-82','Lockman-SWIRE','NGP','SA13','SGP','SPIRE-NEP','SSDF','xFLS','XMM-13hr','XMM-LSS'] 
     fits_list_clean = [x for x in fits_list if "HELP_BLIND" not in x]
     fits_list_sort = sorted(fits_list_clean, key=lambda x: [i for i,e in enumerate(_all_fields) if e in x][0])
-    mr_table = append_tables(fits_list_sort)
-        
-    #Convert to votable
-    votable = table_to_votable(mr_table)
+    
+    #serialization fits tables into one table
+    simple_table = append_tables(fits_list_sort)
+    simple_table['Bkg_SPIRE_250'].unit = u.mJy/u.beam
+    simple_table['Bkg_SPIRE_350'].unit = u.mJy/u.beam
+    simple_table['Bkg_SPIRE_500'].unit = u.mJy/u.beam
+    simple_table['Sig_conf_SPIRE_250'].unit = u.mJy/u.beam
+    simple_table['Sig_conf_SPIRE_350'].unit = u.mJy/u.beam
+    simple_table['Sig_conf_SPIRE_500'].unit = u.mJy/u.beam
+    
+    print('Table Info before (units, dtype)')
+    simple_table.info()
+    
+    td = ascii.read('/Users/epuga/ESDC/FP7H2020/HELP/spire_blind/column_unit_descriptors.txt', guess=False, 
+                    names=['name', 'unit', 'descriptor'], format='no_header', delimiter='\t', fast_reader=False)
+    mr_empty_table = metadata_rich_table(Table(), td['descriptor'].tolist(), names=simple_table.colnames, dtype=simple_table.dtype, 
+                                         units=make_cols_info_table(simple_table)['unit'].tolist(), meta=simple_table.meta)
+    mr_table = metadata_rich_table(simple_table, td['descriptor'].tolist())
+    
+    
+    print('Table Info after (units, dtype, descriptions)')
+    mr_table.info()
+
+    #Convert table to votable
+    votable = table_to_votable(mr_table[:0].copy())
     #votable to .xml file
     #votable.to_xml(os.path.join(out_dirname, basename + '.xml'))
-    votable.to_xml(os.path.join(out_dirname, 'dmu22_XID+SPIRE_HELP_BLIND_Matched_MF.xml'))
+    votable.to_xml(os.path.join(out_dirname, 'dmu22_XID+SPIRE_HELP_BLIND_Matched_MF_nodata2.xml'))
     
 
-    #Only 1 table to xml
-    #there is also a function to create an entire VOTable file with just a single table
+    #Test 3: Only 1 fits table using from_table to votable
+    #simple function to create an entire VOTable astropy.io.votable.tree.Table from just 1 single table
     votable = from_table(table)
     votable.to_xml(os.path.join(out_dirname, basename + '_direct.xml'))
-    #TODO: serialize fit tables
-
-
-    #fits read to write for xml (no intermediate steps)
-    tbl = Table.read(path)
-    Table.read.list_formats()
-    tbl.write(os.path.join(out_dirname, basename + '_read_write.xml'), format='votable')
-    tbl.info()
 
