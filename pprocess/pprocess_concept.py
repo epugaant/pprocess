@@ -48,6 +48,7 @@ def make_cols_info_table(tbl):
 
 def table_to_votable(mr_tbl):
     '''   Function to cast a `~astropy.table.Table` into a `~astropy.io.votable.tree.Table`
+    The oposite is a built in function `~astropy.io.votable.tree.Table.to_table`
     
     Parameters
     ----------
@@ -61,8 +62,8 @@ def table_to_votable(mr_tbl):
     '''
     
     #TODO: serialize tables in resource construction
-    #from astropy.io.votable.tree import VOTableFile, Resource, Table
-    from tree import VOTableFile, Resource, Table
+    from astropy.io.votable.tree import VOTableFile, Resource, Table
+    #from tree import VOTableFile, Resource, Table
 
     votable = VOTableFile()
     # ...with one resource...
@@ -190,8 +191,33 @@ def append_tables(fits_table_list):
 
     return ref_table
 
-def metadata_rich_table(table, descriptions, names=None, dtype=None, units=None, meta=None):
-    #TODO: Table may be empty
+def metadata_rich_table(descriptions, table=None, names=None, dtype=None, units=None, meta=None):
+    '''Function to create a metadata-rich `~astropy.table.Table` or modify existing table metadata
+    .. Note::
+        Since the origin is likely a FITS, it creates the data as list-of-dicts, 
+        therefore the generation of the new table makes use of rows. Attributes 
+        are colnames, dtype, meta and info.
+
+    Parameters
+    ----------
+    descriptions : list, dict
+        List or dict of descriptions to apply to columns.
+    table : list, optional
+        Data (list-of-dicts used in BinTableHDU) to initialize the table. Cannot be empty.
+    names : list, optional
+        Specify column names, by default None.
+    dtype : list, optional
+        Column data types, it is usually a list of double tuples, by default None.
+    units : list, optional
+        List or dict of units to apply to columns, generally needs modification with make_cols_info_table(table)['unit'].tolist(), by default None.
+    meta : dict, optional
+        Metadata associated with the table, by default None.
+
+    Returns
+    -------
+    :class: `astropy.table.Table`
+        A metadata-rich astropy table
+    '''
     if names is None:
         names = table.colnames
         
@@ -204,7 +230,11 @@ def metadata_rich_table(table, descriptions, names=None, dtype=None, units=None,
     if meta is None:
         meta = table.meta
     
-    new_table = Table(rows=table.as_array(), names=names, dtype=dtype, meta=meta, descriptions=descriptions, units=units)
+    if table is None:
+        new_table = Table(rows=None, names=names, dtype=dtype, meta=meta, descriptions=descriptions, units=units)
+    else:
+        new_table = Table(rows=table.as_array(), names=names, dtype=dtype, meta=meta, descriptions=descriptions, units=units)
+        
     return new_table
 
 if __name__ == '__main__':
@@ -259,20 +289,24 @@ if __name__ == '__main__':
     simple_table['Sig_conf_SPIRE_350'].unit = u.mJy/u.beam
     simple_table['Sig_conf_SPIRE_500'].unit = u.mJy/u.beam
     
+    print('')
     print('Table Info before (units, dtype)')
     simple_table.info()
     
     td = ascii.read('/Users/epuga/ESDC/FP7H2020/HELP/spire_blind/column_unit_descriptors.txt', guess=False, 
                     names=['name', 'unit', 'descriptor'], format='no_header', delimiter='\t', fast_reader=False)
-    mr_empty_table = metadata_rich_table(Table(), td['descriptor'].tolist(), names=simple_table.colnames, dtype=simple_table.dtype, 
-                                         units=make_cols_info_table(simple_table)['unit'].tolist(), meta=simple_table.meta)
-    mr_table = metadata_rich_table(simple_table, td['descriptor'].tolist())
     
+    mr_empty_table = metadata_rich_table(td['descriptor'].tolist(), names=simple_table.colnames, 
+                                         dtype=simple_table.dtype, units=make_cols_info_table(simple_table)['unit'].tolist(), 
+                                         meta=simple_table.meta)
+    #Create another table with the metadata. This is the step that can take long
+    mr_table = metadata_rich_table(td['descriptor'].tolist(), table=simple_table) 
     
+    print('')
     print('Table Info after (units, dtype, descriptions)')
     mr_table.info()
 
-    #Convert table to votable
+    #Convert table to votable. 
     votable = table_to_votable(mr_table[:0].copy())
     #votable to .xml file
     #votable.to_xml(os.path.join(out_dirname, basename + '.xml'))
