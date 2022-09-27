@@ -12,6 +12,7 @@
 
 import os
 import glob
+from typing import OrderedDict
 import numpy as np
 from astropy.io import fits, ascii
 from astropy.table import Table, vstack
@@ -203,7 +204,7 @@ def metadata_rich_table(descriptions, table=None, names=None, dtype=None, units=
     descriptions : list, dict
         List or dict of descriptions to apply to columns.
     table : list, optional
-        Data (list-of-dicts used in BinTableHDU) to initialize the table. Cannot be empty.
+        Data (list-of-dicts used in BinTableHDU) to initialize the table, by default None if empty of data.
     names : list, optional
         Specify column names, by default None.
     dtype : list, optional
@@ -236,6 +237,51 @@ def metadata_rich_table(descriptions, table=None, names=None, dtype=None, units=
         new_table = Table(rows=table.as_array(), names=names, dtype=dtype, meta=meta, descriptions=descriptions, units=units)
         
     return new_table
+
+def extend_votable_field(votable, attr_values, attr_name='ucd', attr_key=None):
+    '''Function to extend attributes in all VOTable columns that maybe parsed but not explictely defined for 
+    <FIELD> element of `~astropy.io.votable.tree.Table` (e.g. descriptions) and/or VOTable 
+    specific metadata (ucd).
+
+    Parameters
+    ----------
+    votable : `~astropy.io.votable.tree.VOTableFile`
+        VOTable element that represents an entire file.
+    attr_values : list, OrderedDict
+        Values of attribute or sub-element in a <FIELD>.
+    attr_name : str, optional
+        Attribute or sub-element name in a <FIELD>, by default 'ucd'
+    attr_key : str, optional
+        Substring in key within the attr_values OrderedDict, if applicable, by default None.
+
+    Returns
+    -------
+    `~astropy.io.votable.tree.VOTableFile`
+        Modified `~astropy.io.votable.tree.VOTableFile` with extended attribute in all fields
+    '''
+    if attr_key is None:
+        attr_key = attr_name.upper()
+    if isinstance(attr_values, (OrderedDict, dict)):
+        #filter the dictionary items whose key 
+        #attr_values = OrderedDict({key: val for key, val in attr_values.items() if attr_key in key})
+        #flag if attr_key substring is the core key in attr_values dict
+        key_is_key = True if any(attr_key in k for k in attr_values.keys()) else False
+    for i, column in enumerate(votable.iter_fields_and_params(), 1):
+        try:
+            if isinstance(attr_values, list):
+                setattr(column, attr_name, attr_values[i])
+            elif isinstance(attr_values, (OrderedDict, dict)):
+                print(column)
+                #if key_is_key, use the input substring as dict key, else the name 
+                key = 'T'+attr_key+'{0}'.format(i) if key_is_key else column.name
+                setattr(column, attr_name, attr_values[key])
+                print(getattr(column, attr_name))
+        except AttributeError as error:
+            print('Exception found!: ' + str(error))
+            print('Column {} has a problem with attribute {}'.format(column.name, attr_name)) #maybe use column.name?
+            
+    return votable
+    
 
 if __name__ == '__main__':
    
@@ -300,17 +346,19 @@ if __name__ == '__main__':
                                          dtype=simple_table.dtype, units=make_cols_info_table(simple_table)['unit'].tolist(), 
                                          meta=simple_table.meta)
     #Create another table with the metadata. This is the step that can take long
-    mr_table = metadata_rich_table(td['descriptor'].tolist(), table=simple_table) 
+    #mr_table = metadata_rich_table(td['descriptor'].tolist(), table=simple_table) 
     
     print('')
     print('Table Info after (units, dtype, descriptions)')
-    mr_table.info()
+    mr_empty_table.info()
 
     #Convert table to votable. 
-    votable = table_to_votable(mr_table[:0].copy())
+    votable = table_to_votable(mr_empty_table)
+    
+    votable = extend_votable_field(votable, mr_empty_table.meta, attr_name='ucd')
     #votable to .xml file
     #votable.to_xml(os.path.join(out_dirname, basename + '.xml'))
-    votable.to_xml(os.path.join(out_dirname, 'dmu22_XID+SPIRE_HELP_BLIND_Matched_MF_nodata2.xml'))
+    votable.to_xml(os.path.join(out_dirname, 'dmu22_XID+SPIRE_HELP_BLIND_Matched_MF_onlymeta.xml'))
     
 
     #Test 3: Only 1 fits table using from_table to votable
