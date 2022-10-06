@@ -252,13 +252,14 @@ def extend_votable_field(votable, attr_values, attr_name='ucd', attr_key=None):
     attr_name : str, optional
         Attribute or sub-element name in a <FIELD>, by default 'ucd'
     attr_key : str, optional
-        Substring in key within the attr_values OrderedDict, if applicable, by default None.
+        Substring in key within the attr_values OrderedDict, if applicable, by default None using the attr_name capitalized.
 
     Returns
     -------
     `~astropy.io.votable.tree.VOTableFile`
         Modified `~astropy.io.votable.tree.VOTableFile` with extended attribute in all fields
     '''
+    #TODO: check if len attr_values is compatible with len of fields
     if attr_key is None:
         attr_key = attr_name.upper()
     if isinstance(attr_values, (OrderedDict, dict)):
@@ -267,19 +268,21 @@ def extend_votable_field(votable, attr_values, attr_name='ucd', attr_key=None):
         #flag if attr_key substring is the core key in attr_values dict
         key_is_key = True if any(attr_key in k for k in attr_values.keys()) else False
     for i, column in enumerate(votable.iter_fields_and_params(), 1):
-        try:
-            if isinstance(attr_values, list):
-                setattr(column, attr_name, attr_values[i])
-            elif isinstance(attr_values, (OrderedDict, dict)):
-                print(column)
-                #if key_is_key, use the input substring as dict key, else the name 
+        if isinstance(attr_values, list):
+            try:
+                setattr(column, attr_name, attr_values[i-1])
+                print(getattr(column, attr_name))
+            except:
+                print('Column {} has a problem with attribute {}'.format(column.name, attr_name)) #maybe use column.name?
+        elif isinstance(attr_values, (OrderedDict, dict)):
+            #if key_is_key, use the input substring as dict key, else the name 
+            try:
                 key = 'T'+attr_key+'{0}'.format(i) if key_is_key else column.name
                 setattr(column, attr_name, attr_values[key])
                 print(getattr(column, attr_name))
-        except AttributeError as error:
-            print('Exception found!: ' + str(error))
-            print('Column {} has a problem with attribute {}'.format(column.name, attr_name)) #maybe use column.name?
-            
+            except:
+                print('Column {} has a problem with attribute {}'.format(column.name, attr_name)) #maybe use column.name?
+        
     return votable
     
 
@@ -311,7 +314,7 @@ if __name__ == '__main__':
     tinfo = make_cols_info_table(table)
     bare_data = table.as_array() # produces a structured array (records array)
     
-    #Construct one metadata-rich table
+    #Construct one complete metadata-rich astropy table with columnname, dtype, meta, descriptions and units
     print(split_bytes_dtype_list(tinfo['dtype'].tolist()))
     mr_table = Table(rows=table.as_array(), names=tinfo['name'].tolist(), 
                      dtype=split_bytes_dtype_list(tinfo['dtype'].tolist()), meta=table.meta, 
@@ -355,7 +358,6 @@ if __name__ == '__main__':
     #Convert table to votable. 
     votable = table_to_votable(mr_empty_table)
     
-    votable = extend_votable_field(votable, mr_empty_table.meta, attr_name='ucd')
     #votable to .xml file
     #votable.to_xml(os.path.join(out_dirname, basename + '.xml'))
     votable.to_xml(os.path.join(out_dirname, 'dmu22_XID+SPIRE_HELP_BLIND_Matched_MF_onlymeta.xml'))
