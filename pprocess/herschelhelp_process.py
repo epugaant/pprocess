@@ -7,17 +7,20 @@ from pprocess.pprocess_concept import create_directory, make_cols_info_table, ta
 
 empty = True
 
-#Read in fits table
-fits_list_init = glob.glob(os.path.join('/Volumes/EP_DISK2/EUProjects/HELP/herschelhelp', "*.fits"))
+#Read in list of local fits
+#fits_list_init = glob.glob(os.path.join('/Volumes/EP_DISK2/EUProjects/HELP/herschelhelp', "*.fits"))
+#Read in list of remote url  
 with open('/Users/epuga/ESDC/pprocess/pprocess/herschelhelp_files_url.txt', 'rt') as f:
     fits_list = [url.strip() for url in f.readlines()]
 
 #ucds are in a global external ecsv file
 tucd = Table.read('/Volumes/EP_DISK2/EUProjects/HELP/herschelhelp/herschelhelp_allfields_ucd.ecsv')  
 ucd = OrderedDict(zip(tucd.columns[0], tucd.columns[1]))
+tdes = Table.read('/Volumes/EP_DISK2/EUProjects/HELP/herschelhelp/herschelhelp_allfields_descr.ecsv')
+des = OrderedDict(zip(tdes.columns[0], tdes.columns[1]))
 
 #Process each of the files to turn them into metadata-rich votables
-for path in fits_list[15:]:
+for path in fits_list[4:15]:
     filename = os.path.basename(path)
     basename = os.path.splitext(filename)[0]
     in_dirname = os.path.dirname(path)
@@ -44,7 +47,8 @@ for path in fits_list[15:]:
         votable = table_to_votable(table) 
 
     #ucds in an external file
-    votable = extend_votable_field(votable, tinfo['description'].tolist(), attr_name='description')
+    #votable = extend_votable_field(votable, tinfo['description'].tolist(), attr_name='description')
+    votable = extend_votable_field(votable, des, attr_name='description')
     #ucds are provided in external table
     votable = extend_votable_field(votable, ucd, attr_name='ucd')
 
