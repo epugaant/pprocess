@@ -11,6 +11,7 @@ empty = True
 
 #Read in fits table
 fits_list = glob.glob(os.path.join('/Volumes/EP_DISK2/EUProjects/HELP/spire_blind', "*.fits"))
+#Location is the same, so take first file
 path = fits_list[0]
 filename = os.path.basename(path)
 basename = os.path.splitext(filename)[0]
