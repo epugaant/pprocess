@@ -3,6 +3,8 @@ import yaml
 from astropy.io.fits.connect import read_table_fits    
 from pprocess.pprocess_concept import create_directory, table_to_votable, extend_votable_field
 
+empty = True 
+
 path = '/Volumes/EP_DISK2/eRosita/resources/eFEDStables/eFEDS_c001_main_V7.4.fits'
 out_dirname = '/Volumes/EP_DISK2/eRosita/votables'
 create_directory(out_dirname)
@@ -22,14 +24,16 @@ print('Table Info before (descriptions, ucd)')
 table.info()
 
 # read yaml with tucd
-with open(r'/Volumes/EP_DISK2/eRosita/package/eFEDStables/eFEDS_c001_main_V7.4UCD.yml') as file:
+with open(r'/Volumes/EP_DISK2/eRosita/resources/eFEDStables/eFEDS_c001_main_V7.4UCD.yml') as file:
     # The FullLoader parameter handles the conversion from YAML
     # scalar values to Python the dictionary format
     ucd = yaml.load(file, Loader=yaml.FullLoader)
 
-
 #Convert table to votable. 
-votable = table_to_votable(table)
+    if empty:
+        votable = table_to_votable(table[:0].copy())
+    else:
+        votable = table_to_votable(table) 
 
 #column descriptions are in table.meta with TCOMM header keyword
 votable = extend_votable_field(votable, table.meta, attr_name='description', attr_key='COMM')
@@ -41,5 +45,15 @@ print('Table Info after (ucds, descriptions)')
 t = votable.get_first_table().to_table()# variable to hold temporary table, cannot do info directly 
 print(t.info())
 
+#-------------
 #save the final votable in an xml file changing extension
-votable.to_xml(os.path.join(out_dirname, basename + '.xml')) 
+if empty:
+    votable.to_xml(os.path.join(out_dirname, basename + '_nodata.xml'))
+else:
+    votable.to_xml(os.path.join(out_dirname, basename + '.xml')) 
+
+# In an empty votable .xml, it is still necessary to include the fields after the last FIELD element
+# <DATA>
+# <TABLEDATA>
+# </TABLEDATA>
+# </DATA>
